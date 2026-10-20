@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ER Patient Manager</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="brand">✚ ER Patient Manager</div>
+        <span class="live">● SYSTEM ONLINE</span>
+    </header>
+
+    <main>
+        <section class="intro">
+            <p class="eyebrow">HOSPITAL TRIAGE SYSTEM</p>
+            <h1>Emergency Room <span>Dashboard</span></h1>
+            <p>Prioritize patients. Manage treatment. Save time.</p>
+        </section>
+
+        <section class="stats">
+            <article class="stat">
+                <span>Waiting Patients</span>
+                <strong id="waitingCount">0</strong>
+            </article>
+            <article class="stat">
+                <span>Treated Patients</span>
+                <strong id="treatedCount">0</strong>
+            </article>
+            <article class="stat">
+                <span>Next Severity</span>
+                <strong id="nextSeverity">—</strong>
+            </article>
+        </section>
+
+        <section class="panel">
+            <h2>Register a patient</h2>
+            <form id="patientForm">
+                <label for="patientName">Patient name</label>
+                <input id="patientName" maxlength="100"
+                       placeholder="Enter patient's name" required>
+
+                <label for="severity">Severity level</label>
+                <select id="severity" required>
+                    <option value="5">5 — Critical</option>
+                    <option value="4">4 — Very urgent</option>
+                    <option value="3">3 — Urgent</option>
+                    <option value="2">2 — Moderate</option>
+                    <option value="1">1 — Minor</option>
+                </select>
+
+                <button type="submit">+ Admit patient</button>
+            </form>
+            <p id="message" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="actions">
+            <button id="treatBtn">Treat next patient →</button>
+            <button id="undoBtn" class="secondary">↶ Undo treatment</button>
+            <button id="refreshBtn" class="secondary">↻ Refresh</button>
+        </section>
+
+        <section class="panel">
+            <h2>Waiting list <span class="count" id="waitingBadge">0</span></h2>
+            <p class="muted">Sorted by severity, then arrival time.</p>
+            <div id="waitingList" class="patient-list"></div>
+        </section>
+
+        <section class="panel">
+            <h2>Treatment history</h2>
+            <p class="muted">Most recently treated patients appear first.</p>
+            <div id="historyList" class="patient-list"></div>
+        </section>
+    </main>
+
+    <footer>Emergency Room Patient Manager · Java + Data Structures</footer>
+    <script src="script.js"></script>
+</body>
+</html>

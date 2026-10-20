@@ -1,0 +1,194 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ER Patient Manager</title>
+<style>
+:root{font-family:Arial,sans-serif;color:#e8edf7;background:#0d111a}
+*{box-sizing:border-box}
+body{margin:0}
+header{padding:22px max(20px,calc((100% - 1100px)/2));background:#151c2b;border-bottom:1px solid #293349}
+header h1{margin:0;color:#65a8ff;font-size:25px}
+header p{margin:7px 0 0;color:#aebbd0}
+main{max-width:1100px;margin:auto;padding:22px}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}
+.stat,.panel{background:#151c2b;border:1px solid #293349;border-radius:14px;padding:18px}
+.stat span{display:block;color:#aebbd0;font-size:13px}
+.stat strong{display:block;font-size:27px;margin-top:8px}
+.layout{display:grid;grid-template-columns:340px minmax(0,1fr);gap:18px;align-items:start}
+.panel{margin-bottom:18px}
+h2{font-size:18px;margin:0 0 17px}
+label{display:block;font-size:13px;color:#c2ccdc;margin:13px 0 6px}
+input,select,textarea{width:100%;padding:11px;border:1px solid #36445e;border-radius:8px;background:#0d1421;color:#fff;font:inherit}
+button{border:0;border-radius:8px;padding:11px 14px;background:#548df5;color:white;font-weight:bold;cursor:pointer}
+button:hover{filter:brightness(1.1)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.primary{width:100%;margin-top:17px}
+.secondary{background:#34435c}
+.danger{background:#bd4753}
+.item{background:#0e1522;border:1px solid #2b374c;border-left:5px solid #548df5;border-radius:10px;padding:14px;margin-top:10px}
+.item-top{display:flex;justify-content:space-between;gap:10px;align-items:start}
+.item h3{font-size:16px;margin:0 0 6px;overflow-wrap:anywhere}
+.muted{color:#9eacc2;font-size:13px;line-height:1.6}
+.chip{font-size:12px;padding:5px 8px;border-radius:6px;background:#27354c;white-space:nowrap}
+.sev5{border-left-color:#ff5964}.sev4{border-left-color:#ff994d}.sev3{border-left-color:#f4ca58}.sev2{border-left-color:#53b8ed}.sev1{border-left-color:#54d4a0}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.actions button{font-size:12px;padding:8px 10px}
+.empty{padding:20px;text-align:center;color:#9eacc2;border:1px dashed #35435a;border-radius:10px;margin-top:10px}
+.notice{padding:12px;border-radius:8px;margin-bottom:14px;display:none}
+.notice.error{display:block;background:#46232a;color:#ffb5bb}
+.notice.success{display:block;background:#173c32;color:#a6f2d5}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.section-head h2{margin-bottom:0}
+.small{font-size:12px;color:#9eacc2}
+@media(max-width:760px){.layout{grid-template-columns:1fr}.stats{grid-template-columns:1fr}.stat{padding:14px}.stat strong{font-size:23px}main{padding:14px}header{padding:18px 14px}}
+</style>
+</head>
+<body>
+<header>
+<h1>🏥 ER Patient Manager</h1>
+<p>Emergency Room · Patient prioritization and treatment tracking</p>
+</header>
+<main>
+<div id="notice" class="notice"></div>
+<section class="stats">
+<div class="stat"><span>Patients Waiting</span><strong id="waitingCount">0</strong></div>
+<div class="stat"><span>Treatments Recorded</span><strong id="historyCount">0</strong></div>
+<div class="stat"><span>Next Patient Severity</span><strong id="nextSeverity">—</strong></div>
+</section>
+<div class="layout">
+<section class="panel">
+<h2>➕ Register Patient</h2>
+<form id="patientForm">
+<label for="name">Patient name</label>
+<input id="name" name="name" maxlength="100" required placeholder="Enter full name">
+<label for="age">Age</label>
+<input id="age" name="age" type="number" min="0" max="130" required placeholder="Age">
+<label for="condition">Condition / symptoms</label>
+<textarea id="condition" name="condition" rows="3" maxlength="300" required placeholder="Describe the condition"></textarea>
+<label for="severity">Severity (1–5)</label>
+<select id="severity" name="severity" required>
+<option value="5">5 — Critical</option>
+<option value="4">4 — Very urgent</option>
+<option value="3" selected>3 — Urgent</option>
+<option value="2">2 — Moderate</option>
+<option value="1">1 — Less urgent</option>
+</select>
+<p class="small">Higher severity is treated first. Patients with equal severity are handled in arrival order.</p>
+<button class="primary" type="submit">Register Patient</button>
+</form>
+</section>
+<div>
+<section class="panel">
+<div class="section-head"><h2>🩺 Waiting Room</h2><button class="secondary" id="refreshBtn" type="button">Refresh</button></div>
+<div id="waitingList"><div class="empty">Loading patients…</div></div>
+<div class="actions"><button id="treatBtn" type="button">Treat Next Patient</button></div>
+</section>
+<section class="panel">
+<div class="section-head"><h2>📋 Treatment History</h2><span class="small">Newest first</span></div>
+<div id="historyList"><div class="empty">No treatments recorded.</div></div>
+<div class="actions"><button class="secondary" id="undoBtn" type="button">Undo Last Treatment</button></div>
+</section>
+</div>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let busy=false;
+
+function showNotice(message,type="success"){
+ const n=$("notice");
+ n.textContent=message;
+ n.className="notice "+type;
+ window.scrollTo({top:0,behavior:"smooth"});
+}
+async function api(path,options={}){
+ const response=await fetch(path,{
+  ...options,
+  headers:{"Content-Type":"application/json",...(options.headers||{})}
+ });
+ const data=await response.json();
+ if(!response.ok)throw new Error(data.error||"Request failed");
+ return data;
+}
+function escapeHTML(value){
+ return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function patientCard(p,history=false){
+ const severity=Number(p.severity);
+ return `<article class="item sev${severity}">
+  <div class="item-top">
+   <div><h3>${escapeHTML(p.name)}</h3>
+   <div class="muted">Age: ${escapeHTML(p.age)} · ${escapeHTML(p.condition)}</div></div>
+   <span class="chip">Severity ${severity}/5</span>
+  </div>
+  ${history?'<div class="muted">Treatment recorded</div>':''}
+ </article>`;
+}
+async function refresh(){
+ if(busy)return;
+ try{
+  const state=await api("/api/state");
+  const waiting=state.waitingPatients||[];
+  const history=state.treatmentHistory||[];
+  $("waitingCount").textContent=waiting.length;
+  $("historyCount").textContent=history.length;
+  $("nextSeverity").textContent=waiting.length?waiting[0].severity+"/5":"—";
+  $("waitingList").innerHTML=waiting.length?waiting.map(p=>patientCard(p)).join(""):'<div class="empty">No patients waiting.</div>';
+  $("historyList").innerHTML=history.length?history.map(p=>patientCard(p,true)).join(""):'<div class="empty">No treatments recorded.</div>';
+  $("treatBtn").disabled=waiting.length===0;
+  $("undoBtn").disabled=history.length===0;
+ }catch(error){
+  showNotice("Cannot connect to Java server. Check that it is running. "+error.message,"error");
+ }
+}
+$("patientForm").addEventListener("submit",async event=>{
+ event.preventDefault();
+ if(busy)return;
+ const patient={
+  name:$("name").value.trim(),
+  age:Number($("age").value),
+  condition:$("condition").value.trim(),
+  severity:Number($("severity").value)
+ };
+ if(!patient.name||!patient.condition||!Number.isInteger(patient.age)||patient.age<0||patient.age>130){
+  showNotice("Please enter a valid name, age, and condition.","error");return;
+ }
+ busy=true;
+ try{
+  await api("/api/patient",{method:"POST",body:JSON.stringify(patient)});
+  $("patientForm").reset();
+  $("severity").value="3";
+  showNotice("Patient registered successfully.");
+  await refresh();
+ }catch(error){showNotice(error.message,"error");}
+ finally{busy=false;}
+});
+$("treatBtn").addEventListener("click",async()=>{
+ if(busy)return;
+ busy=true;
+ try{
+  const result=await api("/api/treat",{method:"POST",body:"{}"});
+  showNotice(result.message||"Treatment recorded.");
+  await refresh();
+ }catch(error){showNotice(error.message,"error");}
+ finally{busy=false;}
+});
+$("undoBtn").addEventListener("click",async()=>{
+ if(busy)return;
+ busy=true;
+ try{
+  const result=await api("/api/undo",{method:"POST",body:"{}"});
+  showNotice(result.message||"Last treatment undone.");
+  await refresh();
+ }catch(error){showNotice(error.message,"error");}
+ finally{busy=false;}
+});
+$("refreshBtn").addEventListener("click",refresh);
+refresh();
+setInterval(refresh,5000);
+</script>
+</body>
+</html>
