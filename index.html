@@ -94,101 +94,221 @@ button:disabled{opacity:.5;cursor:not-allowed}
 </div>
 </div>
 </main>
-<script>
-const $=id=>document.getElementById(id);
-let busy=false;
 
-function showNotice(message,type="success"){
- const n=$("notice");
- n.textContent=message;
- n.className="notice "+type;
- window.scrollTo({top:0,behavior:"smooth"});
+<script>
+const $ = id => document.getElementById(id);
+
+const STORAGE_KEY = "erPatientManagerData";
+
+let waitingPatients = [];
+let treatmentHistory = [];
+let nextArrivalOrder = 1;
+
+function loadData() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+
+        if (saved) {
+            const data = JSON.parse(saved);
+
+            waitingPatients = Array.isArray(data.waitingPatients)
+                ? data.waitingPatients : [];
+
+            treatmentHistory = Array.isArray(data.treatmentHistory)
+                ? data.treatmentHistory : [];
+
+            const allPatients = [
+                ...waitingPatients,
+                ...treatmentHistory
+            ];
+
+            nextArrivalOrder = Math.max(
+                1,
+                ...allPatients.map(p => Number(p.arrivalOrder || 0) + 1)
+            );
+        }
+    } catch (error) {
+        showNotice("Could not load saved data. Please check browser storage.", "error");
+    }
 }
-async function api(path,options={}){
- const response=await fetch(path,{
-  ...options,
-  headers:{"Content-Type":"application/json",...(options.headers||{})}
- });
- const data=await response.json();
- if(!response.ok)throw new Error(data.error||"Request failed");
- return data;
+
+function saveData() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            waitingPatients,
+            treatmentHistory
+        }));
+        return true;
+    } catch (error) {
+        showNotice("Could not save data. Check browser storage space.", "error");
+        return false;
+    }
 }
-function escapeHTML(value){
- return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function showNotice(message, type = "success") {
+    const notice = $("notice");
+    notice.textContent = message;
+    notice.className = "notice " + type;
+    window.scrollTo({ top: 0, behavior: "smooth" });
 }
-function patientCard(p,history=false){
- const severity=Number(p.severity);
- return `<article class="item sev${severity}">
-  <div class="item-top">
-   <div><h3>${escapeHTML(p.name)}</h3>
-   <div class="muted">Age: ${escapeHTML(p.age)} · ${escapeHTML(p.condition)}</div></div>
-   <span class="chip">Severity ${severity}/5</span>
-  </div>
-  ${history?'<div class="muted">Treatment recorded</div>':''}
- </article>`;
+
+function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, c => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    }[c]));
 }
-async function refresh(){
- if(busy)return;
- try{
-  const state=await api("/api/state");
-  const waiting=state.waitingPatients||[];
-  const history=state.treatmentHistory||[];
-  $("waitingCount").textContent=waiting.length;
-  $("historyCount").textContent=history.length;
-  $("nextSeverity").textContent=waiting.length?waiting[0].severity+"/5":"—";
-  $("waitingList").innerHTML=waiting.length?waiting.map(p=>patientCard(p)).join(""):'<div class="empty">No patients waiting.</div>';
-  $("historyList").innerHTML=history.length?history.map(p=>patientCard(p,true)).join(""):'<div class="empty">No treatments recorded.</div>';
-  $("treatBtn").disabled=waiting.length===0;
-  $("undoBtn").disabled=history.length===0;
- }catch(error){
-  showNotice("Cannot connect to Java server. Check that it is running. "+error.message,"error");
- }
+
+function sortWaitingPatients() {
+    waitingPatients.sort((a, b) =>
+        Number(b.severity) - Number(a.severity) ||
+        Number(a.arrivalOrder) - Number(b.arrivalOrder)
+    );
 }
-$("patientForm").addEventListener("submit",async event=>{
- event.preventDefault();
- if(busy)return;
- const patient={
-  name:$("name").value.trim(),
-  age:Number($("age").value),
-  condition:$("condition").value.trim(),
-  severity:Number($("severity").value)
- };
- if(!patient.name||!patient.condition||!Number.isInteger(patient.age)||patient.age<0||patient.age>130){
-  showNotice("Please enter a valid name, age, and condition.","error");return;
- }
- busy=true;
- try{
-  await api("/api/patient",{method:"POST",body:JSON.stringify(patient)});
-  $("patientForm").reset();
-  $("severity").value="3";
-  showNotice("Patient registered successfully.");
-  await refresh();
- }catch(error){showNotice(error.message,"error");}
- finally{busy=false;}
+
+function patientCard(patient, history = false) {
+    const severity = Number(patient.severity);
+
+    return `
+        <article class="item sev${severity}">
+            <div class="item-top">
+                <div>
+                    <h3>${escapeHTML(patient.name)}</h3>
+                    <div class="muted">
+                        Age: ${escapeHTML(patient.age)} ·
+                        ${escapeHTML(patient.condition)}
+                    </div>
+                </div>
+                <span class="chip">Severity ${severity}/5</span>
+            </div>
+            ${history
+                ? '<div class="muted">Treatment recorded</div>'
+                : ''}
+        </article>`;
+}
+
+function refresh() {
+    sortWaitingPatients();
+
+    $("waitingCount").textContent = waitingPatients.length;
+    $("historyCount").textContent = treatmentHistory.length;
+
+    $("nextSeverity").textContent = waitingPatients.length
+        ? waitingPatients[0].severity + "/5"
+        : "—";
+
+    $("waitingList").innerHTML = waitingPatients.length
+        ? waitingPatients.map(p => patientCard(p)).join("")
+        : '<div class="empty">No patients waiting.</div>';
+
+    $("historyList").innerHTML = treatmentHistory.length
+        ? treatmentHistory.map(p => patientCard(p, true)).join("")
+        : '<div class="empty">No treatments recorded.</div>';
+
+    $("treatBtn").disabled = waitingPatients.length === 0;
+    $("undoBtn").disabled = treatmentHistory.length === 0;
+}
+
+$("patientForm").addEventListener("submit", event => {
+    event.preventDefault();
+
+    const patient = {
+        name: $("name").value.trim(),
+        age: Number($("age").value),
+        condition: $("condition").value.trim(),
+        severity: Number($("severity").value),
+        arrivalOrder: nextArrivalOrder++
+    };
+
+    if (
+        !patient.name ||
+        !patient.condition ||
+        !Number.isInteger(patient.age) ||
+        patient.age < 0 ||
+        patient.age > 130 ||
+        !Number.isInteger(patient.severity) ||
+        patient.severity < 1 ||
+        patient.severity > 5
+    ) {
+        showNotice("Please enter a valid name, age, condition, and severity.", "error");
+        return;
+    }
+
+    waitingPatients.push(patient);
+    sortWaitingPatients();
+
+    if (!saveData()) {
+        waitingPatients = waitingPatients.filter(
+            p => p.arrivalOrder !== patient.arrivalOrder
+        );
+        nextArrivalOrder--;
+        refresh();
+        return;
+    }
+
+    $("patientForm").reset();
+    $("severity").value = "3";
+
+    refresh();
+    showNotice("Patient registered successfully.");
 });
-$("treatBtn").addEventListener("click",async()=>{
- if(busy)return;
- busy=true;
- try{
-  const result=await api("/api/treat",{method:"POST",body:"{}"});
-  showNotice(result.message||"Treatment recorded.");
-  await refresh();
- }catch(error){showNotice(error.message,"error");}
- finally{busy=false;}
+
+$("treatBtn").addEventListener("click", () => {
+    sortWaitingPatients();
+
+    if (waitingPatients.length === 0) {
+        showNotice("No patients are waiting for treatment.", "error");
+        return;
+    }
+
+    const patient = waitingPatients.shift();
+    treatmentHistory.unshift(patient);
+
+    if (!saveData()) {
+        treatmentHistory.shift();
+        waitingPatients.push(patient);
+        refresh();
+        return;
+    }
+
+    refresh();
+    showNotice("Treatment recorded for " + patient.name + ".");
 });
-$("undoBtn").addEventListener("click",async()=>{
- if(busy)return;
- busy=true;
- try{
-  const result=await api("/api/undo",{method:"POST",body:"{}"});
-  showNotice(result.message||"Last treatment undone.");
-  await refresh();
- }catch(error){showNotice(error.message,"error");}
- finally{busy=false;}
+
+$("undoBtn").addEventListener("click", () => {
+    if (treatmentHistory.length === 0) {
+        showNotice("There is no treatment to undo.", "error");
+        return;
+    }
+
+    const patient = treatmentHistory.shift();
+    waitingPatients.push(patient);
+    sortWaitingPatients();
+
+    if (!saveData()) {
+        waitingPatients = waitingPatients.filter(
+            p => p.arrivalOrder !== patient.arrivalOrder
+        );
+        treatmentHistory.unshift(patient);
+        refresh();
+        return;
+    }
+
+    refresh();
+    showNotice("Last treatment undone. " + patient.name + " returned to the waiting room.");
 });
-$("refreshBtn").addEventListener("click",refresh);
+
+$("refreshBtn").addEventListener("click", () => {
+    refresh();
+    showNotice("Patient lists refreshed.");
+});
+
+loadData();
 refresh();
-setInterval(refresh,5000);
 </script>
+
 </body>
 </html>
